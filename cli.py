@@ -6,6 +6,7 @@ from providers.virustotal import VirusTotalProvider
 from providers.abuseipdb import AbuseIPDBProvider
 from providers.greynoise import GreyNoiseProvider
 from providers.alienvault import AlienVaultProvider
+from providers.urlscan import URLScanProvider
 
 app = typer.Typer(help="ioc-search: Consulta de Threat Intelligence")
 
@@ -27,8 +28,9 @@ def search(ioc: str):
         VirusTotalProvider(Config.VT_API_KEY),
         AbuseIPDBProvider(Config.ABUSE_API_KEY),
         GreyNoiseProvider(Config.GREYNOISE_API_KEY),
-        AlienVaultProvider(Config.OTX_API_KEY)
-    ]
+        AlienVaultProvider(Config.OTX_API_KEY),
+        URLScanProvider(Config.URLSCAN_API_KEY),
+        ]
 
     results = []
     with ThreadPoolExecutor(max_workers=len(providers)) as executor:
@@ -51,7 +53,8 @@ def search(ioc: str):
             continue
 
         typer.echo("-" * 30)
-        typer.secho(f"Provider: {res['provider']}", bold=True, fg=typer.colors.MAGENTA)
+        nome_provider = res.get('provider', 'Desconhecido')
+        typer.secho(f"Provider: {nome_provider}", bold=True, fg=typer.colors.MAGENTA)
 
         if res['provider'] == "VirusTotal":
             malicioso = res.get('malicious', 0)
@@ -73,7 +76,15 @@ def search(ioc: str):
             cor = typer.colors.RED if count > 0 else typer.colors.GREEN
             typer.secho(f"Pulses no OTX: {count}", fg=cor, bold=True)
 
-    typer.echo("-" * 30)
+        elif res['provider'] == "URLScan":
+            if res.get('status') == "not_found":
+                typer.echo("Nenhuma varredura encontrada no URLScan.")
+            else:
+                typer.secho(f"País do Servidor: {res.get('country')}", fg=typer.colors.CYAN)
+                typer.echo(f"Software do Servidor: {res.get('server')}")
+                typer.echo(f"Link do Relatório: {res.get('result_url')}")
+
+        typer.echo("-" * 30)
 
 if __name__ == "__main__":
     app()

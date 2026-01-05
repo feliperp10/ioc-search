@@ -9,12 +9,14 @@ class GreyNoiseProvider(BaseProvider):
 
     def fetch(self, ioc: str, ioc_type: str):
         if ioc_type != "ip":
-            return {"status": "skipped", "message": "GreyNoise suporta apenas IPs."}
+            return {"status": "skipped", "message": "GreyNoise suporta apenas IPs.", "provider": "GreyNoise"}
 
         try:
             response = requests.get(f"{self.base_url}/{ioc}", headers=self.headers)
             if response.status_code == 404:
-                return {"status": "not_found", "message": "IP não visto pelo GreyNoise."}
+                # ADICIONE 'provider' AQUI:
+                return {"status": "not_found", "message": "IP não visto.", "provider": "GreyNoise"}
+            
             response.raise_for_status()
             return self.normalize_results(response.json())
         except Exception as e:
