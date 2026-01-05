@@ -1,0 +1,24 @@
+# --- Segurança (CRÍTICO) ---
+# Nunca subir chaves de API e configurações locais
+.env
+
+# --- Python ---
+# Ambiente virtual (evita subir gigas de bibliotecas instaladas)
+.venv/
+venv/
+env/
+ENV/
+
+# Arquivos compilados e cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- VS Code ---
+# Configurações do seu editor local
+.vscode/
+
+# --- SO ---
+# Arquivos de sistema (macOS e Windows)
+.DS_Store
+Thumbs.db
