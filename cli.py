@@ -4,6 +4,7 @@ from validators import identify_ioc_type
 from config import Config
 from providers.virustotal import VirusTotalProvider
 from providers.abuseipdb import AbuseIPDBProvider
+from providers.greynoise import GreyNoiseProvider
 
 app = typer.Typer(help="ioc-search: Consulta de Threat Intelligence")
 
@@ -27,8 +28,9 @@ def search(ioc: str):
     # Lista de instâncias dos providers
     providers = [
         VirusTotalProvider(Config.VT_API_KEY),
-        AbuseIPDBProvider(Config.ABUSE_API_KEY)
-    ]
+        AbuseIPDBProvider(Config.ABUSE_API_KEY),
+        GreyNoiseProvider(Config.GREYNOISE_API_KEY)
+        ]
 
     # --- MÁGICA DO PARALELISMO ---
     results = []
@@ -61,11 +63,11 @@ def search(ioc: str):
             typer.secho(f"Deteções Maliciosas: {malicioso}", fg=cor, bold=True)
             typer.echo(f"Reputação: {res.get('reputation')}")
 
-        elif res['provider'] == "AbuseIPDB":
-            score = res.get('abuse_score', 0)
-            cor = typer.colors.RED if score > 50 else typer.colors.GREEN
-            typer.secho(f"Confiança de Abuso: {score}%", fg=cor, bold=True)
-            typer.echo(f"País: {res.get('country')}")
+        elif res['provider'] == "GreyNoise":
+            cor = typer.colors.YELLOW if res['is_noise'] else typer.colors.GREEN
+            typer.secho(f"É Ruído (Noise): {res['is_noise']}", fg=cor, bold=True)
+            typer.echo(f"Classificação: {res['classification']}")
+            typer.echo(f"Organização: {res['name']}")
 
     typer.echo("-" * 30)
 
