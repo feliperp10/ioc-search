@@ -1,90 +1,98 @@
 import typer
+from rich.console import Console
+from rich.table import Table
+from rich.text import Text
+from rich import box
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from config import settings
 from validators import identify_ioc_type
-from config import Config
 from providers.virustotal import VirusTotalProvider
-from providers.abuseipdb import AbuseIPDBProvider
-from providers.greynoise import GreyNoiseProvider
 from providers.alienvault import AlienVaultProvider
 from providers.urlscan import URLScanProvider
+from providers.hybridanalysis import HybridAnalysisProvider
 
-app = typer.Typer(help="ioc-search: Consulta de Threat Intelligence")
+app = typer.Typer()
+console = Console()
 
 def run_provider(provider, ioc, ioc_type):
-    return provider.fetch(ioc, ioc_type)
+    try:
+        return provider.fetch(ioc, ioc_type)
+    except Exception as e:
+        return {"provider": provider.__class__.__name__.replace("Provider", ""), "error": str(e)}
 
 @app.command()
 def search(ioc: str):
     ioc_type = identify_ioc_type(ioc)
-    
     if ioc_type == "unknown":
-        typer.secho(f"[-] Erro: IOC '{ioc}' não reconhecido.", fg=typer.colors.RED, bold=True)
+        console.print("[bold red]Erro:[/bold red] IOC Inválido.")
         return
 
-    typer.secho(f"[*] Analisando {ioc_type}: {ioc}", fg=typer.colors.BLUE, bold=True)
+    console.print(f"\n[*] Investigando: [bold cyan]{ioc}[/bold cyan]\n")
 
-    # 1. Certifique-se de que os nomes no Config.XXXX batem com o seu config.py
     providers = [
-        VirusTotalProvider(Config.VT_API_KEY),
-        AbuseIPDBProvider(Config.ABUSE_API_KEY),
-        GreyNoiseProvider(Config.GREYNOISE_API_KEY),
-        AlienVaultProvider(Config.OTX_API_KEY),
-        URLScanProvider(Config.URLSCAN_API_KEY),
-        ]
+        VirusTotalProvider(settings.get("VT_API_KEY")),
+        HybridAnalysisProvider(settings.get("HYBRID_API_KEY")),
+        AlienVaultProvider(settings.get("OTX_API_KEY")),
+        URLScanProvider(settings.get("URLSCAN_API_KEY"))
+    ]
 
-    results = []
-    with ThreadPoolExecutor(max_workers=len(providers)) as executor:
-        future_to_provider = {executor.submit(run_provider, p, ioc, ioc_type): p for p in providers}
-        
-        for future in as_completed(future_to_provider):
-            try:
-                data = future.result()
-                results.append(data)
-            except Exception as exc:
-                typer.secho(f"[!] Erro inesperado em um provider: {exc}", fg=typer.colors.RED)
+    table = Table(show_header=True, header_style="bold white on blue", expand=True, box=box.ROUNDED)
+    table.add_column("Provider", width=18)
+    table.add_column("Status / Resultado", justify="center", width=22)
+    table.add_column("Detalhes e Contexto de Ameaça")
 
-    # --- EXIBIÇÃO ---
-    for res in results:
-        if "error" in res:
-            typer.secho(f"\n[!] Erro em {res.get('provider')}: {res['error']}", fg=typer.colors.RED)
-            continue
-        
-        if res.get("status") == "skipped":
-            continue
+    with console.status("[bold green]Coletando Inteligência...[/bold green]"):
+        with ThreadPoolExecutor(max_workers=len(providers)) as executor:
+            futures = {executor.submit(run_provider, p, ioc, ioc_type): p for p in providers}
+            
+            for future in as_completed(futures):
+                res = future.result()
+                if not res or res.get("status") == "skipped": continue
+                
+                nome = res.get("provider", "Desconhecido")
+                
+                if "error" in res:
+                    table.add_row(nome, "[bold red]FALHA[/bold red]", f"[red]{res['error']}[/red]")
+                elif res.get("status") == "not_found":
+                    table.add_row(nome, "[bold yellow]LIMPO / NF[/bold yellow]", "Sem registros encontrados nesta base.")
+                else:
+                    # Lógica para Hybrid Analysis (Baseado no seu JSON)
+                    if nome == "HybridAnalysis":
+                        v = res.get('verdict', 'unknown').upper()
+                        score = res.get('threat_score', 0)
+                        cor = "bright_red" if v == "MALICIOUS" else "bright_yellow" if v == "SUSPICIOUS" else "green"
+                        
+                        status = Text(f"Score: {score}/100", style=f"bold {cor}")
+                        detalhes = Text.assemble(
+                            ("Veredito: ", "white"), (v, f"bold {cor}"),
+                            (" | Ambiente: ", "white"), (f"{res.get('env', 'N/A')}", "italic cyan"),
+                            (" | Job: ", "white"), (f"{res.get('job_id', 'N/A')[:10]}", "dim")
+                        )
+                        table.add_row(nome, status, detalhes)
+                    
+                    # Lógica para VirusTotal
+                    elif nome == "VirusTotal":
+                        det = res.get('malicious', 0)
+                        cor = "bright_red" if det > 0 else "green"
+                        status = Text(f"{det} Detecções", style=f"bold {cor}")
+                        table.add_row(nome, status, f"Tipo: {res.get('type')} | Reputação: {res.get('reputation')}")
 
-        typer.echo("-" * 30)
-        nome_provider = res.get('provider', 'Desconhecido')
-        typer.secho(f"Provider: {nome_provider}", bold=True, fg=typer.colors.MAGENTA)
+                    # Lógica para AlienVault
+                    elif nome == "AlienVault":
+                        cnt = res.get('pulses_count', 0)
+                        cor = "bright_red" if cnt > 0 else "green"
+                        status = Text(f"{cnt} Pulses", style=f"bold {cor}")
+                        table.add_row(nome, status, res.get('details', 'N/A'))
 
-        if res['provider'] == "VirusTotal":
-            malicioso = res.get('malicious', 0)
-            cor = typer.colors.GREEN if malicioso == 0 else typer.colors.RED
-            typer.secho(f"Deteções Maliciosas: {malicioso}", fg=cor, bold=True)
+                    # Lógica Genérica
+                    else:
+                        table.add_row(nome, "[green]Concluído[/green]", "Análise finalizada com sucesso.")
 
-        elif res['provider'] == "AbuseIPDB":
-            score = res.get('abuse_score', 0)
-            cor = typer.colors.RED if score > 50 else typer.colors.GREEN
-            typer.secho(f"Confiança de Abuso: {score}%", fg=cor, bold=True)
+                table.add_section()
 
-        elif res['provider'] == "GreyNoise":
-            cor = typer.colors.YELLOW if res.get('is_noise') else typer.colors.GREEN
-            typer.secho(f"É Ruído (Noise): {res.get('is_noise')}", fg=cor)
-            typer.echo(f"Classificação: {res.get('classification')}")
-
-        elif res['provider'] == "AlienVault":
-            count = res.get('pulses', 0)
-            cor = typer.colors.RED if count > 0 else typer.colors.GREEN
-            typer.secho(f"Pulses no OTX: {count}", fg=cor, bold=True)
-
-        elif res['provider'] == "URLScan":
-            if res.get('status') == "not_found":
-                typer.echo("Nenhuma varredura encontrada no URLScan.")
-            else:
-                typer.secho(f"País do Servidor: {res.get('country')}", fg=typer.colors.CYAN)
-                typer.echo(f"Software do Servidor: {res.get('server')}")
-                typer.echo(f"Link do Relatório: {res.get('result_url')}")
-
-        typer.echo("-" * 30)
+    console.print(table)
+    console.print("\n[dim]* Pesquisa baseada em APIs de Threat Intelligence pública/comunidade.[/dim]")
 
 if __name__ == "__main__":
     app()
