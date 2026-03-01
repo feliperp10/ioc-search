@@ -1,61 +1,39 @@
 import requests
-from .base import BaseProvider
 
-class AlienVaultProvider(BaseProvider):
-    def __init__(self, api_key: str):
-        super().__init__(api_key)
-        self.base_url = "https://otx.alienvault.com/api/v1/indicators"
-        self.headers = {
-            "X-OTX-API-KEY": self.api_key.strip(),
-            "Accept": "application/json"
+class AlienVaultProvider:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.name = "AlienVault"
+        self.url = "https://otx.alienvault.com/api/v1/indicators"
+
+    def fetch(self, ioc, ioc_type):
+        # Mapeamento OTX: 'IPv4' -> 'IPv4', 'domain' -> 'domain', etc.
+        # Mas o ioc_type que recebemos é 'ipv4'
+        otx_type_map = {
+            "ipv4": "IPv4",
+            "domain": "domain",
+            "url": "url",
+            "md5": "file",
+            "sha256": "file"
         }
 
-    def fetch(self, ioc: str, ioc_type: str):
-        # Mapeamento dinâmico para garantir que os 3 tipos funcionem
-        tipo_otx = {
-            "hash": "file",
-            "sha256": "file",
-            "md5": "file",
-            "sha1": "file",
-            "ip": "IPv4",
-            "domain": "domain",
-            "url": "url"
-        }.get(ioc_type)
+        if ioc_type not in otx_type_map:
+            return {"provider": self.name, "status": "skipped"}
 
-        if not tipo_otx:
-            return {"status": "skipped", "provider": "AlienVault"}
+        headers = {"X-OTX-API-KEY": self.api_key}
+        endpoint = f"{self.url}/{otx_type_map[ioc_type]}/{ioc}/general"
 
         try:
-            # O endpoint /general é o que traz o resumo de Pulses e Tags
-            url = f"{self.base_url}/{tipo_otx}/{ioc}/general"
-            response = requests.get(url, headers=self.headers, timeout=15)
-            
-            if response.status_code == 404:
-                return {"provider": "AlienVault", "status": "not_found"}
-            
-            response.raise_for_status()
-            return self.normalize_results(response.json())
+            response = requests.get(endpoint, headers=headers, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                pulses = data.get("pulse_info", {}).get("pulses", [])
+                return {
+                    "provider": self.name,
+                    "status": "success",
+                    "pulses_count": len(pulses),
+                    "details": f"Presente em {len(pulses)} pulses" if pulses else "Sem pulses ativos"
+                }
+            return {"provider": self.name, "status": "not_found"}
         except Exception as e:
-            return {"provider": "AlienVault", "error": str(e)}
-
-    def normalize_results(self, raw_data: dict) -> dict:
-        pulse_info = raw_data.get("pulse_info", {})
-        count = pulse_info.get("count", 0)
-        pulses = pulse_info.get("pulses", [])
-        
-        # Coleta tags de todos os pulses retornados e remove duplicatas
-        all_tags = []
-        for p in pulses:
-            tags = p.get("tags", [])
-            if tags:
-                all_tags.extend(tags)
-        
-        # Limpa e limita a exibição às 4 tags mais relevantes
-        unique_tags = sorted(list(set(all_tags)), key=len, reverse=True)[:4]
-        tag_str = ", ".join(unique_tags) if unique_tags else "Sem tags específicas"
-
-        return {
-            "provider": "AlienVault",
-            "pulses_count": count,
-            "details": f"Presente em {count} campanhas | Tags: {tag_str}"
-        }
+            raise Exception(f"Erro na API AlienVault: {str(e)}")

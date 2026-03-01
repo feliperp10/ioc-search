@@ -1,32 +1,29 @@
 import requests
-from .base import BaseProvider
 
-class GreyNoiseProvider(BaseProvider):
-    def __init__(self, api_key: str):
-        super().__init__(api_key)
-        self.base_url = "https://api.greynoise.io/v3/community"
-        self.headers = {"key": self.api_key, "Accept": "application/json"}
+class GreyNoiseProvider:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.name = "GreyNoise"
+        self.url = "https://api.greynoise.io/v3/community"
 
-    def fetch(self, ioc: str, ioc_type: str):
-        if ioc_type != "ip":
-            return {"status": "skipped", "message": "GreyNoise suporta apenas IPs.", "provider": "GreyNoise"}
+    def fetch(self, ioc, ioc_type):
+        # GreyNoise Community API só aceita IPv4
+        if ioc_type != "ipv4":
+            return {"provider": self.name, "status": "skipped"}
 
+        headers = {"key": self.api_key}
         try:
-            response = requests.get(f"{self.base_url}/{ioc}", headers=self.headers)
-            if response.status_code == 404:
-                # ADICIONE 'provider' AQUI:
-                return {"status": "not_found", "message": "IP não visto.", "provider": "GreyNoise"}
-            
-            response.raise_for_status()
-            return self.normalize_results(response.json())
+            response = requests.get(f"{self.url}/{ioc}", headers=headers, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                return {
+                    "provider": self.name,
+                    "status": "success",
+                    "noise": data.get("noise", False),
+                    "riot": data.get("riot", False), # RIOT indica IPs de serviços comuns (Google, MSFT)
+                    "classification": data.get("classification", "unknown"),
+                    "name": data.get("name", "Desconhecido")
+                }
+            return {"provider": self.name, "status": "not_found"}
         except Exception as e:
-            return {"error": str(e), "provider": "GreyNoise"}
-
-    def normalize_results(self, raw_data: dict) -> dict:
-        return {
-            "provider": "GreyNoise",
-            "is_noise": raw_data.get("noise", False),
-            "is_riot": raw_data.get("riot", False),
-            "classification": raw_data.get("classification", "unknown"),
-            "name": raw_data.get("name", "N/A")
-        }
+            raise Exception(f"Erro GreyNoise: {str(e)}")

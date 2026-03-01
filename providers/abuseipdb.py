@@ -1,18 +1,19 @@
 import requests
-from .base import BaseProvider
 
-class AbuseIPDBProvider(BaseProvider):
-    def __init__(self, api_key: str):
-        super().__init__(api_key)
-        self.base_url = "https://api.abuseipdb.com/api/v2/check"
+class AbuseIPDBProvider:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.name = "AbuseIPDB"
+        self.url = "https://api.abuseipdb.com/api/v2/check"
 
-    def fetch(self, ioc: str, ioc_type: str):
-        if ioc_type != "ip":
-            return {"status": "skipped", "provider": "AbuseIPDB"}
+    def fetch(self, ioc, ioc_type):
+        # CORREÇÃO: Deve validar 'ipv4'
+        if ioc_type != "ipv4":
+            return {"provider": self.name, "status": "skipped"}
 
         headers = {
-            "Accept": "application/json",
-            "Key": self.api_key.strip()
+            "Key": self.api_key,
+            "Accept": "application/json"
         }
         params = {
             "ipAddress": ioc,
@@ -20,19 +21,17 @@ class AbuseIPDBProvider(BaseProvider):
         }
 
         try:
-            response = requests.get(self.base_url, headers=headers, params=params, timeout=15)
-            response.raise_for_status()
-            return self.normalize_results(response.json())
+            response = requests.get(self.url, headers=headers, params=params, timeout=10)
+            if response.status_code == 200:
+                data = response.json().get("data", {})
+                return {
+                    "provider": self.name,
+                    "status": "success",
+                    "score": data.get("abuseConfidenceScore", 0),
+                    "total_reports": data.get("totalReports", 0),
+                    "isp": data.get("isp", "N/A"),
+                    "country": data.get("countryCode", "N/A")
+                }
+            return {"provider": self.name, "status": "error"}
         except Exception as e:
-            return {"provider": "AbuseIPDB", "error": str(e)}
-
-    def normalize_results(self, raw_data: dict) -> dict:
-        data = raw_data.get("data", {})
-        return {
-            "provider": "AbuseIPDB",
-            "abuse_score": data.get("abuseConfidenceScore", 0),
-            "isp": data.get("isp", "Desconhecido"),
-            "country": data.get("countryCode", "N/A"),
-            "usage": data.get("usageType", "N/A"),
-            "reports": data.get("totalReports", 0)
-        }
+            raise Exception(f"Erro na API AbuseIPDB: {str(e)}")
