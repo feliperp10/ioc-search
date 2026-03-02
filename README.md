@@ -23,11 +23,11 @@ What is the business value?
 ###  Installation & System Utility Setup
 To use this tool from anywhere in your terminal as `ioc-search`, follow these steps:
 
-1. **Clone and Install**:
-   ```bash
-   git clone [https://github.com/youruser/ioc-search.git](https://github.com/youruser/ioc-search.git)
-   cd ioc-search
-   pip install -r requirements.txt
+  1. **Clone and Install**:
+```bash
+git clone https://github.com/feliperp10/ioc-search.git
+cd ioc-search
+pip install -r requirements.txt
    ```
 
 2. **Set up Global Alias:**
@@ -38,8 +38,8 @@ Add the tool to your shell configuration (Bash or ZSH):
 # Open your config file
 nano ~/.bashrc  # or ~/.zshrc
 
-# Add this line at the end (replace with your actual path)
-alias ioc-search='python3 /home/felipe/ioc-search/cli.py'
+# Add this line at the end
+alias ioc-search='python3 ~/ioc-search/cli.py'
 ```
 
 3. **Reload Config:**
@@ -102,22 +102,22 @@ Para utilizar a ferramenta de qualquer lugar do terminal com o comando ioc-searc
 
 1. **Clonar e instalar:**
 
-```
-git clone https://github.com/youruser/ioc-search.git
+```bash
+git clone https://github.com/feliperp10/ioc-search.git
 cd ioc-search
 pip install -r requirements.txt
-```
+   ```
 
 2. **Configurar Alias Global:**
 
 Adicione a ferramenta à configuração do seu shell (Bash ou ZSH):
 
 ```
-# Abra o arquivo de configuração
-nano ~/.bashrc  # ou ~/.zshrc
+# Abra seu arquivo de configuração
+nano ~/.bashrc  # or ~/.zshrc
 
-# Adicione esta linha ao final (substitua pelo caminho correto)
-alias ioc-search='python3 /home/felipe/ioc-search/cli.py'
+# Adicione esta linha no final
+alias ioc-search='python3 ~/ioc-search/cli.py'
 ```
 
 3. Recarregar a configuração
