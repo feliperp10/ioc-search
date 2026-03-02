@@ -22,3 +22,8 @@ __pycache__/
 # Arquivos de sistema (macOS e Windows)
 .DS_Store
 Thumbs.db
+
+# --- Resultados e Dados Locais ---
+# Evita subir o histórico de buscas e arquivos exportados
+*.db
+result_*
