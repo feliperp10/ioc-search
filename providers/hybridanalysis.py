@@ -10,41 +10,42 @@ class HybridAnalysisProvider:
         if ioc_type not in ["md5", "sha1", "sha256"]:
             return {"provider": self.name, "status": "skipped"}
 
-        # Endpoint de busca por hash
         endpoint = f"{self.base_url}/search/hash"
-        
         headers = {
             "api-key": self.api_key,
-            "user-agent": "Falcon Sandbox", # Obrigatorio para esta API
+            "user-agent": "Falcon Sandbox",
             "Accept": "application/json"
         }
         
-        # Enviando como query parameters (costuma ser mais aceito que o body em POST v2)
+        # Conforme sua imagem: hash é um query parameter e o método é GET
         params = {"hash": ioc}
 
         try:
-            # Algumas implementacoes do Hybrid Analysis v2 exigem POST, mas aceitam os dados via params
-            response = requests.post(endpoint, headers=headers, params=params, timeout=15)
+            response = requests.get(endpoint, headers=headers, params=params, timeout=15)
 
             if response.status_code == 200:
                 res_data = response.json()
                 
-                if isinstance(res_data, list) and len(res_data) > 0:
-                    # Pegamos a analise mais relevante
-                    analysis = res_data[0]
-                    verdict = analysis.get("verdict", "unknown")
-                    score = analysis.get("threat_score", 0)
+                # Ajuste baseado no seu JSON: A API retorna um objeto com uma lista 'reports'
+                reports = res_data.get("reports", [])
+                
+                if isinstance(reports, list) and len(reports) > 0:
+                    # Procuramos o primeiro relatório que tenha um veredito válido (não nulo)
+                    valid_report = next((r for r in reports if r.get("verdict")), reports[0])
+                    
+                    verdict = valid_report.get("verdict", "unknown")
+                    # O seu JSON mostra 'malicious' em vários relatórios de sucesso
                     
                     return {
                         "provider": self.name,
                         "status": "success",
                         "verdict": verdict,
-                        "score": score,
+                        "score": valid_report.get("threat_score", "N/A"), # Se houver score
                         "malicious": 1 if verdict in ["malicious", "suspicious"] else 0
                     }
+                
                 return {"provider": self.name, "status": "not_found"}
             
-            # Caso a API retorne erro, passamos o status para o CLI
             return {"provider": self.name, "error": f"Status {response.status_code}"}
 
         except Exception as e:

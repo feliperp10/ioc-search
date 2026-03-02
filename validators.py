@@ -1,29 +1,29 @@
-import ipaddress #Verify IPs
-import re #Verify all the rest
+import ipaddress
+import re
 
-def identify_ioc_type(ioc: str) -> str:
-    # 1. Verificar se é IP
+def identify_ioc_type(ioc):
+    ioc = ioc.strip()
+    
+    # 1. Validação de IP (v4 e v6) usando biblioteca nativa
     try:
-        ipaddress.ip_address(ioc)
-        return "ip"
+        ip = ipaddress.ip_address(ioc)
+        if isinstance(ip, ipaddress.IPv4Address):
+            return "ipv4"
+        if isinstance(ip, ipaddress.IPv6Address):
+            return "ipv6"
     except ValueError:
         pass
 
-    # 2. Verificar se é um Hash MD5 (32 caracteres hex)
-    if re.fullmatch(r"([a-fA-F0-9]{32})", ioc):
+    # 2. Validação de Hashes (Regex)
+    if re.fullmatch(r"^[a-fA-F0-9]{32}$", ioc):
         return "md5"
-    
-    # 3. Verificar se é um Hash SHA-256 (64 caracteres hex)
-    if re.fullmatch(r"([a-fA-F0-9]{64})", ioc):
+    if re.fullmatch(r"^[a-fA-F0-9]{40}$", ioc):
+        return "sha1"
+    if re.fullmatch(r"^[a-fA-F0-9]{64}$", ioc):
         return "sha256"
 
-    # 4. Verificar se parece um domínio (simples)
-    if re.match(r"^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$", ioc.lower()):
-        return "domain"
+    # 3. Validação de URL/Domínio simples
+    if "." in ioc:
+        return "url"
 
     return "unknown"
-
-# Teste simples
-if __name__ == "__main__":
-    test_ioc = "8.8.8.8"
-    print(f"O IOC {test_ioc} é do tipo: {identify_ioc_type(test_ioc)}")
