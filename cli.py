@@ -4,6 +4,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 import json
+import csv
 import os
 import time
 from datetime import datetime
@@ -38,13 +39,10 @@ def get_color(verdict):
     return "yellow"
 
 def display_results(results, ioc):
-    """Displays detailed report with ASN/ISP info and provider details."""
-    
-    # 1. Network Information Extraction (ASN/ISP)
+    """Displays detailed report and returns results for export."""
     network_info = None
     for res in results:
         if res.get("status") == "success":
-            # Attempt to capture network data from providers like AbuseIPDB or VirusTotal
             isp = res.get("isp") or res.get("as_owner")
             asn = res.get("asn")
             if isp or asn:
@@ -54,7 +52,6 @@ def display_results(results, ioc):
     if network_info:
         console.print(Panel(network_info, title="🌐 Network Information", border_style="blue"))
 
-    # 2. Results Table Construction
     table = Table(title=f"Results for: [bold cyan]{ioc}[/bold cyan]")
     table.add_column("Search Engine", style="magenta")
     table.add_column("Verdict", justify="center")
@@ -67,48 +64,34 @@ def display_results(results, ioc):
         if status == "success":
             verdict = res.get("verdict", res.get("malicious", "INFO"))
             color = get_color(verdict)
-            
-            # Specific details based on each API return
             detail = "Data retrieved successfully"
-            if p_name == "VirusTotal":
-                detail = f"{verdict} detections in AV engines"
-            elif p_name == "AbuseIPDB":
-                conf = res.get('confidence', 'N/A')
-                detail = f"Confidence Score: {conf}%"
-            elif p_name == "HybridAnalysis":
-                detail = f"Threat Score: {res.get('score', 'N/A')}/100"
-            elif p_name == "GreyNoise":
-                detail = f"Classification: {str(verdict).capitalize()}"
-            elif p_name == "SafeBrowsing":
-                detail = f"Google Status: {str(verdict).replace('_', ' ')}"
-            elif p_name == "AlienVault":
-                detail = f"Found in {res.get('pulse_count', 0)} OTX Pulses"
-
-            table.add_row(p_name, f"[{color}]{str(verdict).upper()}[/{color}]", detail)
+            if p_name == "VirusTotal": detail = f"{verdict} detections in AV engines"
+            elif p_name == "AbuseIPDB": detail = f"Confidence Score: {res.get('confidence', 'N/A')}%"
+            elif p_name == "AlienVault": detail = f"Found in {res.get('pulse_count', 0)} OTX Pulses"
             
+            table.add_row(p_name, f"[{color}]{str(verdict).upper()}[/{color}]", detail)
         elif status == "skipped":
             table.add_row(p_name, "[white]SKIP[/white]", "Incompatible type")
         else:
-            table.add_row(p_name, "[red]ERROR[/red]", f"Failed: {res.get('error', 'Timeout/API')}")
+            table.add_row(p_name, "[red]ERROR[/red]", f"Failed: {res.get('error', 'API Error')}")
             
     console.print(table)
+    return results
 
 def analyze_single_ioc(ioc: str, is_last: bool = False):
-    """Handles the analysis of an individual IOC."""
+    """Handles analysis and returns data for export."""
     ioc = ioc.strip()
-    if not ioc: return
+    if not ioc: return None
     
     ioc_type = identify_ioc_type(ioc)
     if ioc_type == "unknown":
         console.print(f"[red]![/red] Unidentified type: {ioc}")
-        return
+        return None
 
-    # 48-hour cache (validated in database.py)
     cached = db.get_cached_result(ioc)
     if cached:
-        console.print(f"[bold yellow][CACHE Active][/bold yellow] Displaying saved data for {ioc}:")
-        display_results(json.loads(cached), ioc)
-        return
+        console.print(f"[bold yellow][CACHE Active][/bold yellow] Saved data for {ioc}:")
+        return display_results(json.loads(cached), ioc)
 
     console.print(f"[*] Searching {ioc_type.upper()}: [bold cyan]{ioc}[/bold cyan]...")
 
@@ -130,34 +113,59 @@ def analyze_single_ioc(ioc: str, is_last: bool = False):
             results.append({"provider": p.name, "status": "error", "error": str(e)})
 
     db.save_result(ioc, ioc_type, results)
-    display_results(results, ioc)
+    data = display_results(results, ioc)
 
-    # Pause between requests to avoid rate limiting
     if not is_last:
-        console.print(f"[dim]🕒 7s pause to respect API limits...[/dim]")
+        console.print(f"[dim]🕒 7s pause for API limits...[/dim]")
         time.sleep(7)
+    
+    return data
 
 @app.command()
-def scan(ioc: str = typer.Option(None, "-i"), file: str = typer.Option(None, "-f")):
-    """Analyzes one or multiple IOCs with automatic old cache cleanup."""
+def scan(
+    ioc: str = typer.Option(None, "-i", help="Single IOC"), 
+    file: str = typer.Option(None, "-f", help="File with IOCs"),
+    export: str = typer.Option(None, "-e", help="Export format: 'json' or 'csv'")
+):
+    """Scan IOCs and optionally export results with automatic naming."""
     db.cleanup_old_records()
+    final_data = {}
+
     if ioc:
-        analyze_single_ioc(ioc, is_last=True)
+        res = analyze_single_ioc(ioc, is_last=True)
+        if res: final_data[ioc] = res
     elif file and os.path.exists(file):
         with open(file, 'r') as f:
             lines = [l.strip() for l in f if l.strip()]
             for i, line in enumerate(lines):
-                analyze_single_ioc(line, is_last=(i == len(lines)-1))
-    else:
-        console.print("[bold red]Error:[/bold red] Use -i <ioc> or -f <file>.")
+                res = analyze_single_ioc(line, is_last=(i == len(lines)-1))
+                if res: final_data[line] = res
+    
+    if export and final_data:
+        export = export.lower().strip()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"result_{timestamp}.{export}"
+
+        if export == 'json':
+            with open(filename, 'w') as f:
+                json.dump(final_data, f, indent=4)
+        elif export == 'csv':
+            with open(filename, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["IOC", "Provider", "Status", "Verdict"])
+                for ioc_key, providers in final_data.items():
+                    for p in providers:
+                        writer.writerow([ioc_key, p.get('provider'), p.get('status'), p.get('verdict')])
+        
+        console.print(f"\n[bold green]✓ Results exported to: {filename}[/bold green]")
 
 @app.command()
 def history():
-    """Shows query history from the last 48 hours."""
+    """Shows query history."""
     db.cleanup_old_records()
     records = db.get_all_history()
     if not records:
-        console.print("[yellow]No recent analysis available in history (48h).[/yellow]")
+        console.print("[yellow]No recent history.[/yellow]")
         return
 
     table = Table(title="📜 Recent Query Records")
@@ -172,8 +180,7 @@ def history():
             status = f"[bold red]⚠ {alerts} ALERT(S)[/bold red]" if alerts > 0 else "[bold green]✓ CLEAN[/bold green]"
             table.add_row(dt, ioc, status)
         except:
-            table.add_row(dt, ioc, "[dim]Corrupted data[/dim]")
-            
+            table.add_row(dt, ioc, "[dim]Corrupted[/dim]")
     console.print(table)
 
 if __name__ == "__main__":
