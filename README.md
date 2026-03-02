@@ -46,7 +46,42 @@ alias ioc-search='python3 ~/ioc-search/cli.py'
 ```
 source ~/.bashrc  # or ~/.zshrc
 ```
-4. **Usage:**
+
+4. **API Configuration**
+
+This tool requires API keys to function properly.
+
+⚠️ ***Never share your .env file or publish your API keys in the repository.***
+
+### Create the configuration file
+```
+cp .env.example .env
+```
+
+### Obtain your API keys:
+
+Create accounts and generate your API keys from the providers below:
+
+* [VirusTotal]([url](https://www.virustotal.com/gui/sign-in))
+* [AbuseIPDB]([url](https://www.abuseipdb.com/login))
+* [AlienVault OTX]([url](https://otx.alienvault.com/))
+* [GreyNoise]([url](https://www.greynoise.io/))
+* [Hybrid-Analysis]([url](https://hybrid-analysis.com/login))
+* [Google Safe Browsing]([url](https://console.cloud.google.com/)) 
+
+### Configure the .env file
+
+Open the .env file and paste your API keys into the corresponding fields:
+
+```
+nano .env
+```
+
+Fill in the values as indicated in the file.
+
+After this step, the tool will be ready to use.
+
+5. **Usage:**
 
 * Single Scan:
 ```
@@ -120,11 +155,46 @@ nano ~/.bashrc  # or ~/.zshrc
 alias ioc-search='python3 ~/ioc-search/cli.py'
 ```
 
-3. Recarregar a configuração
+3. **Recarregar a configuração:**
 ```
 source ~/.bashrc  # ou ~/.zshrc
 ```
-4. **Como usar:**
+
+4. **Configuração de APIs**
+
+Esta ferramenta requer chaves de API para funcionar corretamente.
+⚠️ **Nunca compartilhe seu arquivo `.env`** ou publique suas chaves no repositório.
+
+### Criar o arquivo de configuração
+
+```bash
+cp .env.example .env
+```
+
+### Obter suas chaves de API
+
+Crie contas e gere suas chaves nos provedores abaixo:
+
+* [VirusTotal]([url](https://www.virustotal.com/gui/sign-in))
+* [AbuseIPDB]([url](https://www.abuseipdb.com/login))
+* [AlienVault OTX]([url](https://otx.alienvault.com/))
+* [GreyNoise]([url](https://www.greynoise.io/))
+* [Hybrid-Analysis]([url](https://hybrid-analysis.com/login))
+* [Google Safe Browsing]([url](https://console.cloud.google.com/)) 
+
+### Configurar o arquivo `.env`
+
+Abra o arquivo `.env` e cole suas chaves nos campos correspondentes:
+
+```bash
+nano .env
+```
+
+Preencha os valores conforme indicado no arquivo.
+
+Após isso, a ferramenta estará pronta para uso.
+
+5. **Como usar:**
 
 * Scan único:
 ```
