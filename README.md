@@ -1,61 +1,61 @@
-IOC Search Tool 🛡️
+# 🛡️ IOC Search Tool - Threat Intelligence CLI
 
-IOC Search Tool é um agregador de Threat Intelligence desenvolvido em Python para analistas de SOC e Incident Response. A ferramenta automatiza a consulta de múltiplos provedores, consolidando reputação, vereditos de sandbox e enriquecimento de infraestrutura numa única interface de linha de comando (CLI).O diferencial desta versão é a capacidade de processar respostas complexas de sandbox, filtrando relatórios de execução com erro e extraindo vereditos precisos de ambientes de sucesso.
+A high-performance command-line interface (CLI) tool designed for security analysts to perform rapid Threat Intelligence lookups. It aggregates data from multiple providers to analyze IP addresses (IPV4 and IPV6), Domains, URLs, and File Hashes.
 
-🚀 Funcionalidades
-Busca Multi-Entidade: Suporte para IPv4, IPV6, URLs, Domínios e Hashes (MD5, SHA1, SHA256).
+---
 
-Análise Avançada de Hashes: Integração com Hybrid Analysis (Falcon Sandbox) para obter vereditos de detonação real.
+## 🇺🇸 English Version
 
-Enriquecimento de Rede: Extração automática de ASN, Proprietário (Owner) e ISP via VirusTotal e AbuseIPDB.
+###  Features
+* **Multi-Provider Analysis**: Integration with VirusTotal, AbuseIPDB, AlienVault OTX, HybridAnalysis, GreyNoise, and Google Safe Browsing.
+* **Network Insights**: Automatically identifies **ASN** and **ISP/Organization** for IP addresses.
+* **Intelligent Caching**: Stores results for **48 hours** in a local SQLite database.
+* **Clean UI**: Professional tables and color-coded threat levels (Clean, Info, Alert).
 
-Inteligência GreyNoise: Identificação de scanners comuns e IPs pertencentes ao RIOT (serviços legítimos conhecidos).
+###  Installation & System Utility Setup
+To use this tool from anywhere in your terminal as `ioc-search`, follow these steps:
 
-Interface Visual: Tabelas formatadas com cores semânticas (Vermelho para Malicioso, Amarelo para Suspeito, Verde para Limpo).
+1. **Clone and Install**:
+   ```bash
+   git clone [https://github.com/youruser/ioc-search.git](https://github.com/youruser/ioc-search.git)
+   cd ioc-search
+   pip install -r requirements.txt
+   ```
 
-Exportação de Dados: Suporte para gerar relatórios em JSON e CSV com timestamps automáticos.
+2. **Set up Global Alias:**
 
-📥 Instalação e Setup
+Add the tool to your shell configuration (Bash or ZSH):
 
-Clonar o repositório:
+```
+# Open your config file
+nano ~/.bashrc  # or ~/.zshrc
 
-git clone https://github.com/feliperp10/ioc-search.git
-cd ioc-search
+# Add this line at the end (replace with your actual path)
+alias ioc-search='python3 /home/felipe/ioc-search/cli.py'
+```
 
-Configurar o ambiente virtual:
-python3 -m venv .venv
-source .venv/bin/activate  # No Windows use: .venv\Scripts\activate
+3. **Reload Config:**
+```
+source ~/.bashrc  # or ~/.zshrc
+```
+4. **Usage:**
 
-Instalar dependências:
-pip install typer rich requests python-dotenv
-
-Configurar chaves de API:Crie um arquivo .env na raiz do projeto (use o .env.example como base):
-
-VT_API_KEY=sua_chave_aqui
-HYBRID_API_KEY=sua_chave_aqui
-OTX_API_KEY=sua_chave_aqui
-ABUSE_API_KEY=sua_chave_aqui
-GREYNOISE_API_KEY=sua_chave_aqui
-GOOGLE_API_KEY=sua_chave_aqui
-
-💻 Exemplos de UsoInvestigar um Indicador Único:
-python3 cli.py -i 1df68d55968bb9d2db4d0d18155188a03a442850ff543c8595166ac6987df820
-
-Analisar Lista a partir de Arquivo
-python3 cli.py -f lista_iocs.txt
-
-Exportar para CSV:
-python3 cli.py -i <IOC> -e csv
-
-Exportar para JSON:
-python3 cli.py -i <IOC> -e json
-
-🔍 Provedores Integrados:
-
-Provedor,Tipo de IOC,Informação Extraída
-Hybrid Analysis,Hashes,Veredito de Sandbox (ex: malicious)
-VirusTotal,Global,"Motores de AV, Reputação, ASN e Owner"
-AlienVault OTX,Global,Presença em Pulses de ameaças conhecidas
-AbuseIPDB,IPs,Score de confiança de abuso e ISP
-GreyNoise,IPs,Classificação de ruído de internet e RIOT
-Safe Browsing,URLs,Classificação de risco do Google
+* Single Scan:
+```
+ioc-search scan -i 8.8.8.8
+```
+* File Scan: 
+```
+ioc-search scan -f targets.txt
+```
+* History: 
+```
+ioc-search scan history
+```
+* Export options:
+```
+ioc-search scan -i 8.8.8.8 -e json
+```
+```
+ioc-search scan -i 8.8.8.8 -e csv
+```
