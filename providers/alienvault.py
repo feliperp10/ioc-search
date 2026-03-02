@@ -7,16 +7,7 @@ class AlienVaultProvider:
         self.url = "https://otx.alienvault.com/api/v1/indicators"
 
     def fetch(self, ioc, ioc_type):
-        # Mapeamento OTX: 'IPv4' -> 'IPv4', 'domain' -> 'domain', etc.
-        # Mas o ioc_type que recebemos é 'ipv4'
-        otx_type_map = {
-            "ipv4": "IPv4",
-            "domain": "domain",
-            "url": "url",
-            "md5": "file",
-            "sha256": "file"
-        }
-
+        otx_type_map = {"ipv4": "IPv4", "domain": "domain", "url": "url", "md5": "file", "sha256": "file"}
         if ioc_type not in otx_type_map:
             return {"provider": self.name, "status": "skipped"}
 
@@ -31,9 +22,9 @@ class AlienVaultProvider:
                 return {
                     "provider": self.name,
                     "status": "success",
-                    "pulses_count": len(pulses),
-                    "details": f"Presente em {len(pulses)} pulses" if pulses else "Sem pulses ativos"
+                    "pulse_count": len(pulses), # Corrigido para bater com cli.py
+                    "verdict": "INFO"
                 }
-            return {"provider": self.name, "status": "not_found"}
+            return {"provider": self.name, "status": "error", "error": "Indicator not found"}
         except Exception as e:
-            raise Exception(f"Erro na API AlienVault: {str(e)}")
+            return {"provider": self.name, "status": "error", "error": str(e)}

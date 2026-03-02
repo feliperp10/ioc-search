@@ -1,171 +1,180 @@
+#!/usr/bin/env python3
 import typer
-import json
-import csv
-from datetime import datetime
 from rich.console import Console
 from rich.table import Table
-from rich.text import Text
-from rich import box
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from rich.panel import Panel
+import json
+import os
+import time
+from datetime import datetime
+from dotenv import load_dotenv
 
-# Importacao dos provedores
-from config import settings
+# Internal modules
 from validators import identify_ioc_type
+from database import Database
 from providers.virustotal import VirusTotalProvider
-from providers.alienvault import AlienVaultProvider
 from providers.hybridanalysis import HybridAnalysisProvider
-from providers.google_safebrowsing import GoogleSafeBrowsingProvider
 from providers.abuseipdb import AbuseIPDBProvider
+from providers.alienvault import AlienVaultProvider
 from providers.greynoise import GreyNoiseProvider
+from providers.google_safebrowsing import GoogleSafeBrowsingProvider 
 
-app = typer.Typer(add_completion=False)
+# Environment settings
+BASE_DIR = "/home/felipe/ioc-search"
+load_dotenv(os.path.join(BASE_DIR, ".env"))
+
+app = typer.Typer(help="IOC Analyzer with Network Intelligence")
 console = Console()
+db = Database()
 
-def run_provider(provider, ioc, ioc_type):
-    try:
-        return provider.fetch(ioc, ioc_type)
-    except Exception as e:
-        nome = provider.__class__.__name__.replace("Provider", "")
-        return {"provider": nome, "error": str(e)}
+def get_color(verdict):
+    """Returns a color based on the severity of the verdict."""
+    if isinstance(verdict, int): return "red" if verdict > 0 else "green"
+    v = str(verdict).lower()
+    malicious_terms = ["malicious", "suspicious", "phishing", "malware", "social_engineering"]
+    clean_terms = ["clean", "harmless", "safe", "benign", "0", "none"]
+    if v in malicious_terms: return "red"
+    if v in clean_terms: return "green"
+    return "yellow"
 
-def analyze_single_ioc(ioc: str, providers: list):
-    ioc = ioc.strip()
-    ioc_type = identify_ioc_type(ioc)
+def display_results(results, ioc):
+    """Displays detailed report with ASN/ISP info and provider details."""
     
-    if ioc_type == "unknown":
-        console.print(f"ERRO: IOC invalido: '{ioc}'")
-        return None
+    # 1. Network Information Extraction (ASN/ISP)
+    network_info = None
+    for res in results:
+        if res.get("status") == "success":
+            # Attempt to capture network data from providers like AbuseIPDB or VirusTotal
+            isp = res.get("isp") or res.get("as_owner")
+            asn = res.get("asn")
+            if isp or asn:
+                network_info = f"[bold white]Provider/Org:[/bold white] {isp or 'N/A'} | [bold white]ASN:[/bold white] {asn or 'N/A'}"
+                break
 
-    console.print(f"\n[*] Analisando {ioc_type.upper()}: [bold cyan]{ioc}[/bold cyan]")
+    if network_info:
+        console.print(Panel(network_info, title="🌐 Network Information", border_style="blue"))
 
-    table = Table(show_header=True, header_style="bold white on blue", expand=True, box=box.ROUNDED)
-    table.add_column("Provider", width=18)
-    table.add_column("Status / Resultado", justify="center", width=22)
-    table.add_column("Detalhes e Contexto")
+    # 2. Results Table Construction
+    table = Table(title=f"Results for: [bold cyan]{ioc}[/bold cyan]")
+    table.add_column("Search Engine", style="magenta")
+    table.add_column("Verdict", justify="center")
+    table.add_column("Technical Details", style="blue")
 
-    ioc_results = {"ioc": ioc, "type": ioc_type, "data": []}
-
-    with console.status("[bold green]Consultando APIs...[/bold green]"):
-        with ThreadPoolExecutor(max_workers=len(providers)) as executor:
-            futures = {executor.submit(run_provider, p, ioc, ioc_type): p for p in providers}
+    for res in results:
+        p_name = res.get("provider", "Unknown")
+        status = res.get("status", "N/A")
+        
+        if status == "success":
+            verdict = res.get("verdict", res.get("malicious", "INFO"))
+            color = get_color(verdict)
             
-            for future in as_completed(futures):
-                res = future.result()
-                if not res or res.get("status") == "skipped":
-                    continue
-                
-                nome = res.get("provider", "Desconhecido")
-                ioc_results["data"].append(res)
-                
-                if "error" in res:
-                    msg = "NF / SEM DADOS" if "404" in res['error'] else "FALHA TECNICA"
-                    table.add_row(nome, f"[white]{msg}[/white]", f"[dim]{res['error']}[/dim]")
-                
-                elif res.get("status") == "not_found":
-                    table.add_row(nome, "[bold bright_green]LIMPO / NF[/bold bright_green]", "Nenhum registro encontrado.")
-                
-                else:
-                    # --- VIRUSTOTAL ---
-                    if nome == "VirusTotal":
-                        mal = res.get('malicious', 0)
-                        cor = "bright_red" if mal > 3 else "yellow" if mal > 0 else "bright_green"
-                        asn_info = f" | ASN: {res.get('asn')} ({res.get('as_owner')})" if res.get('asn') != "N/A" else ""
-                        detalhes = f"Rep: {res.get('reputation')}{asn_info}"
-                        table.add_row(nome, Text(f"{mal} Detecoes", style=f"bold {cor}"), detalhes)
+            # Specific details based on each API return
+            detail = "Data retrieved successfully"
+            if p_name == "VirusTotal":
+                detail = f"{verdict} detections in AV engines"
+            elif p_name == "AbuseIPDB":
+                conf = res.get('confidence', 'N/A')
+                detail = f"Confidence Score: {conf}%"
+            elif p_name == "HybridAnalysis":
+                detail = f"Threat Score: {res.get('score', 'N/A')}/100"
+            elif p_name == "GreyNoise":
+                detail = f"Classification: {str(verdict).capitalize()}"
+            elif p_name == "SafeBrowsing":
+                detail = f"Google Status: {str(verdict).replace('_', ' ')}"
+            elif p_name == "AlienVault":
+                detail = f"Found in {res.get('pulse_count', 0)} OTX Pulses"
 
-                    # --- ABUSEIPDB ---
-                    elif nome == "AbuseIPDB":
-                        score = res.get('score', 0)
-                        cor = "bright_red" if score > 50 else "yellow" if score > 0 else "white"
-                        detalhes = f"ISP: {res.get('isp')} | Pais: {res.get('country')} | Uso: {res.get('usage_type')}"
-                        table.add_row(nome, Text(f"Confianca: {score}%", style=f"bold {cor}"), detalhes)
-
-                    # --- HYBRID ANALYSIS ---
-                    elif nome == "HybridAnalysis":
-                        v = res.get('verdict', 'unknown').upper()
-                        score = res.get('score', 0)
-                        cor = "bright_red" if v == "MALICIOUS" else "yellow" if v == "SUSPICIOUS" else "bright_green"
-                        table.add_row(nome, Text(v, style=f"bold {cor}"), f"Threat Score: {score}/100")
-
-                    # --- GOOGLE SAFE BROWSING ---
-                    elif nome == "GoogleSafeBrowsing":
-                        v = res.get('verdict', '').upper()
-                        if v == "MALICIOUS":
-                            status = Text("MALICIOSO", style="bold bright_red")
-                            detalhes = f"Tipo: {res.get('threat_type')}"
-                        else:
-                            status = Text("LIMPO", style="bold bright_green")
-                            detalhes = "URL segura segundo o Google"
-                        table.add_row(nome, status, detalhes)
-
-                    # --- ALIENVAULT ---
-                    elif nome == "AlienVault":
-                        cnt = res.get('pulses_count', 0)
-                        cor = "bright_red" if cnt > 0 else "bright_green"
-                        table.add_row(nome, Text(f"{cnt} Pulses", style=f"bold {cor}"), res.get('details'))
-
-                    # --- GREYNOISE ---
-                    elif nome == "GreyNoise":
-                        classif = res.get('classification', 'unknown')
-                        is_riot = res.get('riot', False)
-                        cor = "bright_green" if classif == "benign" or is_riot else "bright_red" if classif == "malicious" else "white"
-                        table.add_row(nome, Text(classif.upper(), style=f"bold {cor}"), f"Tag: {res.get('name')}")
-
-                    else:
-                        table.add_row(nome, "[white]Concluido[/white]", "Dados processados.")
-                
-                table.add_section()
-
+            table.add_row(p_name, f"[{color}]{str(verdict).upper()}[/{color}]", detail)
+            
+        elif status == "skipped":
+            table.add_row(p_name, "[white]SKIP[/white]", "Incompatible type")
+        else:
+            table.add_row(p_name, "[red]ERROR[/red]", f"Failed: {res.get('error', 'Timeout/API')}")
+            
     console.print(table)
-    return ioc_results
 
-def export_data(results, format_ext):
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"results_{timestamp}.{format_ext}"
-    if format_ext == "json":
-        with open(filename, "w") as f:
-            json.dump(results, f, indent=4)
-    elif format_ext == "csv":
-        with open(filename, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["IOC", "Tipo", "Provider", "Status", "Info_Adicional"])
-            for r in results:
-                for d in r["data"]:
-                    extra = d.get("as_owner") or d.get("isp") or d.get("verdict") or "N/A"
-                    writer.writerow([r["ioc"], r["type"], d.get("provider"), d.get("status"), extra])
-    console.print(f"\n[bold green]Dados exportados para {filename}[/bold green]")
-
-@app.command()
-def main(
-    ioc: str = typer.Option(None, "--ioc", "-i"), 
-    file: str = typer.Option(None, "--file", "-f"),
-    export: str = typer.Option(None, "--export", "-e")
-):
-    providers = [
-        VirusTotalProvider(settings.get("VT_API_KEY")),
-        HybridAnalysisProvider(settings.get("HYBRID_API_KEY")),
-        AlienVaultProvider(settings.get("OTX_API_KEY")),
-        GreyNoiseProvider(settings.get("GREYNOISE_API_KEY")),
-        AbuseIPDBProvider(settings.get("ABUSE_API_KEY")),
-        GoogleSafeBrowsingProvider(settings.get("GOOGLE_API_KEY"))
-    ]
-
-    iocs_input = []
-    if file:
-        with open(file, 'r') as f: iocs_input = [l.strip() for l in f if l.strip()]
-    elif ioc:
-        iocs_input.append(ioc)
-    else:
-        console.print("Erro: Informe -i ou -f")
+def analyze_single_ioc(ioc: str, is_last: bool = False):
+    """Handles the analysis of an individual IOC."""
+    ioc = ioc.strip()
+    if not ioc: return
+    
+    ioc_type = identify_ioc_type(ioc)
+    if ioc_type == "unknown":
+        console.print(f"[red]![/red] Unidentified type: {ioc}")
         return
 
-    all_results = []
-    for item in iocs_input:
-        res = analyze_single_ioc(item, providers)
-        if res: all_results.append(res)
+    # 48-hour cache (validated in database.py)
+    cached = db.get_cached_result(ioc)
+    if cached:
+        console.print(f"[bold yellow][CACHE Active][/bold yellow] Displaying saved data for {ioc}:")
+        display_results(json.loads(cached), ioc)
+        return
 
-    if export and all_results:
-        export_data(all_results, export.lower())
+    console.print(f"[*] Searching {ioc_type.upper()}: [bold cyan]{ioc}[/bold cyan]...")
+
+    providers = [
+        VirusTotalProvider(os.getenv("VT_API_KEY")),
+        HybridAnalysisProvider(os.getenv("HYBRID_API_KEY")),
+        AbuseIPDBProvider(os.getenv("ABUSE_API_KEY")),
+        AlienVaultProvider(os.getenv("OTX_API_KEY")),
+        GreyNoiseProvider(os.getenv("GREYNOISE_API_KEY")),
+        GoogleSafeBrowsingProvider(os.getenv("GOOGLE_API_KEY"))
+    ]
+
+    results = []
+    for p in providers:
+        try:
+            res = p.fetch(ioc, ioc_type)
+            results.append(res)
+        except Exception as e:
+            results.append({"provider": p.name, "status": "error", "error": str(e)})
+
+    db.save_result(ioc, ioc_type, results)
+    display_results(results, ioc)
+
+    # Pause between requests to avoid rate limiting
+    if not is_last:
+        console.print(f"[dim]🕒 7s pause to respect API limits...[/dim]")
+        time.sleep(7)
+
+@app.command()
+def scan(ioc: str = typer.Option(None, "-i"), file: str = typer.Option(None, "-f")):
+    """Analyzes one or multiple IOCs with automatic old cache cleanup."""
+    db.cleanup_old_records()
+    if ioc:
+        analyze_single_ioc(ioc, is_last=True)
+    elif file and os.path.exists(file):
+        with open(file, 'r') as f:
+            lines = [l.strip() for l in f if l.strip()]
+            for i, line in enumerate(lines):
+                analyze_single_ioc(line, is_last=(i == len(lines)-1))
+    else:
+        console.print("[bold red]Error:[/bold red] Use -i <ioc> or -f <file>.")
+
+@app.command()
+def history():
+    """Shows query history from the last 48 hours."""
+    db.cleanup_old_records()
+    records = db.get_all_history()
+    if not records:
+        console.print("[yellow]No recent analysis available in history (48h).[/yellow]")
+        return
+
+    table = Table(title="📜 Recent Query Records")
+    table.add_column("Date/Time", style="cyan")
+    table.add_column("IOC", style="white")
+    table.add_column("Threat Status", justify="center")
+
+    for dt, ioc_type, ioc, data_raw in records:
+        try:
+            data = json.loads(data_raw)
+            alerts = sum(1 for r in data if r.get('status') == 'success' and get_color(r.get('verdict', 0)) == "red")
+            status = f"[bold red]⚠ {alerts} ALERT(S)[/bold red]" if alerts > 0 else "[bold green]✓ CLEAN[/bold green]"
+            table.add_row(dt, ioc, status)
+        except:
+            table.add_row(dt, ioc, "[dim]Corrupted data[/dim]")
+            
+    console.print(table)
 
 if __name__ == "__main__":
     app()

@@ -1,61 +1,36 @@
 import requests
-from .base import BaseProvider
 
-class GoogleSafeBrowsingProvider(BaseProvider):
-    def __init__(self, api_key: str):
-        super().__init__(api_key)
+class GoogleSafeBrowsingProvider:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.name = "SafeBrowsing"
         self.base_url = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
-        self.api_key = api_key.strip()
 
-    def fetch(self, ioc: str, ioc_type: str):
-        # O Google Safe Browsing foca prioritariamente em URLs e Domínios
-        if ioc_type not in ["url", "domain"]:
-            return {"status": "skipped", "provider": "GoogleSafeBrowsing"}
-
-        # Se for domínio, formatamos como URL para a API aceitar
-        url_to_check = ioc if ioc_type == "url" else f"http://{ioc}"
+    def fetch(self, ioc, ioc_type):
+        if ioc_type != "url":
+            return {"provider": self.name, "status": "skipped"}
+        
+        if not self.api_key:
+            return {"provider": self.name, "status": "error", "error": "Missing Google API Key"}
 
         payload = {
-            "client": {
-                "clientId": "threatscout-cli",
-                "clientVersion": "1.0.0"
-            },
+            "client": {"clientId": "ioc-search", "clientVersion": "1.0.0"},
             "threatInfo": {
-                "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION"],
+                "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE"],
                 "platformTypes": ["ANY_PLATFORM"],
                 "threatEntryTypes": ["URL"],
-                "threatEntries": [{"url": url_to_check}]
+                "threatEntries": [{"url": ioc}]
             }
         }
-
+        
         try:
-            response = requests.post(
-                f"{self.base_url}?key={self.api_key}",
-                json=payload,
-                timeout=15
-            )
-            
-            if response.status_code != 200:
-                return {"provider": "GoogleSafeBrowsing", "error": f"HTTP {response.status_code}"}
-
-            data = response.json()
-            
-            # Se 'matches' não existir no JSON, o site é considerado seguro pelo Google
-            matches = data.get("matches", [])
-            
-            if not matches:
-                return {"provider": "GoogleSafeBrowsing", "status": "not_found", "verdict": "clean"}
-
-            return self.normalize_results(matches[0])
-
+            r = requests.post(f"{self.base_url}?key={self.api_key}", json=payload, timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                matches = data.get("matches", [])
+                if matches:
+                    return {"provider": self.name, "status": "success", "verdict": matches[0]["threatType"]}
+                return {"provider": self.name, "status": "success", "verdict": "SAFE"}
+            return {"provider": self.name, "status": "error", "error": f"API Error: {r.status_code}"}
         except Exception as e:
-            return {"provider": "GoogleSafeBrowsing", "error": str(e)}
-
-    def normalize_results(self, data: dict) -> dict:
-        threat_type = data.get("threatType", "UNKNOWN")
-        return {
-            "provider": "GoogleSafeBrowsing",
-            "verdict": "malicious",
-            "threat_type": threat_type,
-            "platform": data.get("platformType", "ALL")
-        }
+            return {"provider": self.name, "status": "error", "error": str(e)}

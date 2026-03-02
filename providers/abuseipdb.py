@@ -4,34 +4,33 @@ class AbuseIPDBProvider:
     def __init__(self, api_key):
         self.api_key = api_key
         self.name = "AbuseIPDB"
-        self.base_url = "https://api.abuseipdb.com/api/v2/check"
+        self.url = "https://api.abuseipdb.com/api/v2/check"
 
     def fetch(self, ioc, ioc_type):
-        # Valida se é IP (v4 ou v6)
         if ioc_type not in ["ipv4", "ipv6"]:
             return {"provider": self.name, "status": "skipped"}
 
-        headers = {
-            "Key": self.api_key,
-            "Accept": "application/json"
-        }
-        params = {
-            "ipAddress": ioc,
-            "maxAgeInDays": "90"
-        }
+        if not self.api_key:
+            return {"provider": self.name, "status": "error", "error": "Missing API Key"}
+
+        headers = {"Accept": "application/json", "Key": self.api_key}
+        params = {"ipAddress": ioc, "maxAgeInDays": "90"}
 
         try:
-            response = requests.get(self.base_url, headers=headers, params=params, timeout=15)
+            response = requests.get(self.url, headers=headers, params=params, timeout=10)
             if response.status_code == 200:
-                res = response.json()["data"]
+                data = response.json().get("data", {})
+                score = data.get("abuseConfidenceScore", 0)
                 return {
                     "provider": self.name,
                     "status": "success",
-                    "score": res.get("abuseConfidenceScore", 0),
-                    "isp": res.get("isp", "Desconhecido"),
-                    "country": res.get("countryCode", "??"),
-                    "usage_type": res.get("usageType", "N/A")
+                    "verdict": score,
+                    "confidence": score,
+                    "isp": data.get("isp"),
+                    "asn": data.get("asn")
                 }
-            return {"provider": self.name, "status": "not_found"}
+            elif response.status_code == 429:
+                return {"provider": self.name, "status": "error", "error": "Rate Limit exceeded"}
+            return {"provider": self.name, "status": "error", "error": f"HTTP Error {response.status_code}"}
         except Exception as e:
-            return {"provider": self.name, "error": str(e)}
+            return {"provider": self.name, "status": "error", "error": str(e)}
