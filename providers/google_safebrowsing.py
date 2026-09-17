@@ -1,36 +1,40 @@
 import requests
 
-class GoogleSafeBrowsingProvider:
-    def __init__(self, api_key):
-        self.api_key = api_key
-        self.name = "SafeBrowsing"
-        self.base_url = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
+from providers.base import BaseProvider
 
-    def fetch(self, ioc, ioc_type):
-        if ioc_type != "url":
-            return {"provider": self.name, "status": "skipped"}
-        
-        if not self.api_key:
-            return {"provider": self.name, "status": "error", "error": "Missing Google API Key"}
 
-        payload = {
-            "client": {"clientId": "ioc-search", "clientVersion": "1.0.0"},
+class GoogleSafeBrowsingProvider(BaseProvider):
+    name = "GoogleSafeBrowsing"
+    supported_types = ["url"]
+    BASE_URL = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
+
+    def _query(self, ioc, ioc_type):
+        target = ioc if "://" in ioc else f"http://{ioc}"
+
+        body = {
+            "client": {"clientId": "ioc-search-tool", "clientVersion": "1.0"},
             "threatInfo": {
-                "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE"],
+                "threatTypes": [
+                    "MALWARE",
+                    "SOCIAL_ENGINEERING",
+                    "UNWANTED_SOFTWARE",
+                    "POTENTIALLY_HARMFUL_APPLICATION",
+                ],
                 "platformTypes": ["ANY_PLATFORM"],
                 "threatEntryTypes": ["URL"],
-                "threatEntries": [{"url": ioc}]
-            }
+                "threatEntries": [{"url": target}],
+            },
         }
-        
-        try:
-            r = requests.post(f"{self.base_url}?key={self.api_key}", json=payload, timeout=10)
-            if r.status_code == 200:
-                data = r.json()
-                matches = data.get("matches", [])
-                if matches:
-                    return {"provider": self.name, "status": "success", "verdict": matches[0]["threatType"]}
-                return {"provider": self.name, "status": "success", "verdict": "SAFE"}
-            return {"provider": self.name, "status": "error", "error": f"API Error: {r.status_code}"}
-        except Exception as e:
-            return {"provider": self.name, "status": "error", "error": str(e)}
+
+        resp = requests.post(
+            self.BASE_URL, params={"key": self.api_key}, json=body, timeout=15
+        )
+        resp.raise_for_status()
+        matches = resp.json().get("matches", [])
+
+        verdict = matches[0].get("threatType", "malicious").lower() if matches else "clean"
+
+        return {
+            "verdict": verdict,
+            "matches_found": len(matches),
+        }

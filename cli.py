@@ -21,12 +21,12 @@ from providers.greynoise import GreyNoiseProvider
 from providers.google_safebrowsing import GoogleSafeBrowsingProvider 
 
 # Environment settings
-BASE_DIR = "/home/felipe/ioc-search"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 app = typer.Typer(help="IOC Analyzer with Network Intelligence")
 console = Console()
-db = Database()
+db = Database(os.path.join(BASE_DIR, "ioc_cache.db"))
 
 def get_color(verdict):
     """Returns a color based on the severity of the verdict."""
@@ -50,7 +50,7 @@ def display_results(results, ioc):
                 break
 
     if network_info:
-        console.print(Panel(network_info, title="🌐 Network Information", border_style="blue"))
+        console.print(Panel(network_info, title="Network Information", border_style="blue"))
 
     table = Table(title=f"Results for: [bold cyan]{ioc}[/bold cyan]")
     table.add_column("Search Engine", style="magenta")
@@ -68,6 +68,11 @@ def display_results(results, ioc):
             if p_name == "VirusTotal": detail = f"{verdict} detections in AV engines"
             elif p_name == "AbuseIPDB": detail = f"Confidence Score: {res.get('confidence', 'N/A')}%"
             elif p_name == "AlienVault": detail = f"Found in {res.get('pulse_count', 0)} OTX Pulses"
+            elif p_name == "HybridAnalysis":
+                if res.get("note"):
+                    detail = res["note"]
+                else:
+                    detail = f"Threat score: {res.get('threat_score', 'N/A')}"
             
             table.add_row(p_name, f"[{color}]{str(verdict).upper()}[/{color}]", detail)
         elif status == "skipped":
@@ -116,7 +121,7 @@ def analyze_single_ioc(ioc: str, is_last: bool = False):
     data = display_results(results, ioc)
 
     if not is_last:
-        console.print(f"[dim]🕒 7s pause for API limits...[/dim]")
+        console.print("[dim]7s pause for API limits...[/dim]")
         time.sleep(7)
     
     return data
@@ -157,7 +162,7 @@ def scan(
                     for p in providers:
                         writer.writerow([ioc_key, p.get('provider'), p.get('status'), p.get('verdict')])
         
-        console.print(f"\n[bold green]✓ Results exported to: {filename}[/bold green]")
+        console.print(f"\n[bold green]Results exported to: {filename}[/bold green]")
 
 @app.command()
 def history():
@@ -168,7 +173,7 @@ def history():
         console.print("[yellow]No recent history.[/yellow]")
         return
 
-    table = Table(title="📜 Recent Query Records")
+    table = Table(title="Recent Query Records")
     table.add_column("Date/Time", style="cyan")
     table.add_column("IOC", style="white")
     table.add_column("Threat Status", justify="center")
@@ -177,7 +182,7 @@ def history():
         try:
             data = json.loads(data_raw)
             alerts = sum(1 for r in data if r.get('status') == 'success' and get_color(r.get('verdict', 0)) == "red")
-            status = f"[bold red]⚠ {alerts} ALERT(S)[/bold red]" if alerts > 0 else "[bold green]✓ CLEAN[/bold green]"
+            status = f"[bold red]{alerts} ALERT(S)[/bold red]" if alerts > 0 else "[bold green]CLEAN[/bold green]"
             table.add_row(dt, ioc, status)
         except:
             table.add_row(dt, ioc, "[dim]Corrupted[/dim]")

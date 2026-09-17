@@ -1,36 +1,47 @@
-import requests
 import base64
+import requests
 
-class VirusTotalProvider:
-    def __init__(self, api_key):
-        self.api_key = api_key
-        self.name = "VirusTotal"
-        self.base_url = "https://www.virustotal.com/api/v3"
+from providers.base import BaseProvider
 
-    def fetch(self, ioc, ioc_type):
-        if ioc_type in ["ipv4", "ipv6"]:
-            endpoint = f"{self.base_url}/ip_addresses/{ioc}"
-        elif ioc_type in ["md5", "sha1", "sha256"]:
-            endpoint = f"{self.base_url}/files/{ioc}"
+
+class VirusTotalProvider(BaseProvider):
+    name = "VirusTotal"
+    supported_types = ["ipv4", "ipv6", "url", "md5", "sha1", "sha256"]
+    BASE_URL = "https://www.virustotal.com/api/v3"
+
+    def _headers(self):
+        return {"x-apikey": self.api_key}
+
+    def _query(self, ioc, ioc_type):
+        if ioc_type in ("ipv4", "ipv6"):
+            endpoint = f"{self.BASE_URL}/ip_addresses/{ioc}"
         elif ioc_type == "url":
-            url_id = base64.urlsafe_b64encode(ioc.encode()).decode().strip("=")
-            endpoint = f"{self.base_url}/urls/{url_id}"
-        else:
-            return {"provider": self.name, "status": "skipped"}
+            if "://" in ioc:
+                url_id = base64.urlsafe_b64encode(ioc.encode()).decode().strip("=")
+                endpoint = f"{self.BASE_URL}/urls/{url_id}"
+            else:
+                endpoint = f"{self.BASE_URL}/domains/{ioc}"
+        else:  # md5 / sha1 / sha256
+            endpoint = f"{self.BASE_URL}/files/{ioc}"
 
-        headers = {"x-apikey": self.api_key}
-        try:
-            response = requests.get(endpoint, headers=headers, timeout=15)
-            if response.status_code == 200:
-                data = response.json()["data"]["attributes"]
-                stats = data.get("last_analysis_stats", {})
-                return {
-                    "provider": self.name,
-                    "status": "success",
-                    "verdict": stats.get("malicious", 0),
-                    "asn": data.get("asn"),
-                    "as_owner": data.get("as_owner")
-                }
-            return {"provider": self.name, "status": "error", "error": "Not found or API limit"}
-        except Exception as e:
-            return {"provider": self.name, "status": "error", "error": str(e)}
+        resp = requests.get(endpoint, headers=self._headers(), timeout=15)
+
+        if resp.status_code == 404:
+            return {"verdict": 0, "malicious": 0, "note": "Não encontrado na base do VirusTotal"}
+
+        resp.raise_for_status()
+        attrs = resp.json().get("data", {}).get("attributes", {})
+        stats = attrs.get("last_analysis_stats", {})
+        malicious = stats.get("malicious", 0)
+        suspicious = stats.get("suspicious", 0)
+
+        result = {
+            "verdict": malicious + suspicious,
+            "malicious": malicious,
+        }
+
+        if ioc_type in ("ipv4", "ipv6"):
+            result["as_owner"] = attrs.get("as_owner")
+            result["asn"] = attrs.get("asn")
+
+        return result

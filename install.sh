@@ -1,23 +1,31 @@
 #!/bin/bash
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
+RED='\033[0;31m'
 NC='\033[0m'
 
-PROJECT_DIR="/home/felipe/ioc-search"
+# Detecta automaticamente o diretório onde este script está localizado
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_PATH="/usr/local/bin/ioc-search"
 
-echo -e "${BLUE}[*] Corrigindo permissões e wrapper global...${NC}"
+echo -e "${BLUE}[*] Projeto detectado em: ${PROJECT_DIR}${NC}"
 
-# Garantir executável
+if [ ! -f "$PROJECT_DIR/.venv/bin/python" ]; then
+    echo -e "${BLUE}[*] Ambiente virtual (.venv) não encontrado. Criando...${NC}"
+    python3 -m venv "$PROJECT_DIR/.venv"
+    "$PROJECT_DIR/.venv/bin/pip" install --upgrade pip >/dev/null
+    "$PROJECT_DIR/.venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt"
+fi
+
+echo -e "${BLUE}[*] Corrigindo permissões e wrapper global...${NC}"
 chmod +x "$PROJECT_DIR/cli.py"
 
-# Criar wrapper robusto usando aspas simples para o EOF para evitar expansão de variáveis indesejadas
-sudo bash -c "cat << 'EOF' > $BIN_PATH
+# Cria wrapper global usando o caminho detectado dinamicamente
+sudo bash -c "cat << EOF > $BIN_PATH
 #!/bin/bash
-# Executa a venv do projeto com os argumentos passados
-/home/felipe/ioc-search/.venv/bin/python /home/felipe/ioc-search/cli.py \"\$@\"
+${PROJECT_DIR}/.venv/bin/python ${PROJECT_DIR}/cli.py \"\\\$@\"
 EOF"
 
-sudo chmod +x $BIN_PATH
+sudo chmod +x "$BIN_PATH"
 
 echo -e "${GREEN}[V] Concluído! Teste agora com: ioc-search history${NC}"

@@ -1,27 +1,26 @@
 import requests
 
-class GreyNoiseProvider:
-    def __init__(self, api_key):
-        self.api_key = api_key
-        self.name = "GreyNoise"
-        self.base_url = "https://api.greynoise.io/v3/community"
+from providers.base import BaseProvider
 
-    def fetch(self, ioc, ioc_type):
-        if ioc_type not in ["ipv4", "ipv6"]:
-            return {"provider": self.name, "status": "skipped"}
-        
-        if not self.api_key:
-            return {"provider": self.name, "status": "error", "error": "Missing GreyNoise API Key"}
 
-        headers = {"accept": "application/json", "key": self.api_key}
-        try:
-            response = requests.get(f"{self.base_url}/{ioc}", headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                classification = data.get("classification", "unknown")
-                return {"provider": self.name, "status": "success", "verdict": classification}
-            elif response.status_code == 404:
-                return {"provider": self.name, "status": "success", "verdict": "NOT_FOUND"}
-            return {"provider": self.name, "status": "error", "error": f"Error {response.status_code}"}
-        except Exception as e:
-            return {"provider": self.name, "status": "error", "error": str(e)}
+class GreyNoiseProvider(BaseProvider):
+    name = "GreyNoise"
+    # API Community do GreyNoise só cobre IPv4
+    supported_types = ["ipv4"]
+    BASE_URL = "https://api.greynoise.io/v3/community"
+
+    def _query(self, ioc, ioc_type):
+        headers = {"key": self.api_key, "Accept": "application/json"}
+        resp = requests.get(f"{self.BASE_URL}/{ioc}", headers=headers, timeout=15)
+
+        if resp.status_code == 404:
+            return {"verdict": "unknown", "note": "Sem dados na base GreyNoise"}
+
+        resp.raise_for_status()
+        data = resp.json()
+
+        return {
+            "verdict": data.get("classification", "unknown"),
+            "noise": data.get("noise"),
+            "riot": data.get("riot"),
+        }

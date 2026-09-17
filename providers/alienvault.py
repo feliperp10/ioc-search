@@ -1,30 +1,37 @@
+from urllib.parse import quote
 import requests
 
-class AlienVaultProvider:
-    def __init__(self, api_key):
-        self.api_key = api_key
-        self.name = "AlienVault"
-        self.url = "https://otx.alienvault.com/api/v1/indicators"
+from providers.base import BaseProvider
 
-    def fetch(self, ioc, ioc_type):
-        otx_type_map = {"ipv4": "IPv4", "domain": "domain", "url": "url", "md5": "file", "sha256": "file"}
-        if ioc_type not in otx_type_map:
-            return {"provider": self.name, "status": "skipped"}
 
-        headers = {"X-OTX-API-KEY": self.api_key}
-        endpoint = f"{self.url}/{otx_type_map[ioc_type]}/{ioc}/general"
+class AlienVaultProvider(BaseProvider):
+    name = "AlienVault"
+    supported_types = ["ipv4", "ipv6", "url", "md5", "sha1", "sha256"]
+    BASE_URL = "https://otx.alienvault.com/api/v1/indicators"
 
-        try:
-            response = requests.get(endpoint, headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                pulses = data.get("pulse_info", {}).get("pulses", [])
-                return {
-                    "provider": self.name,
-                    "status": "success",
-                    "pulse_count": len(pulses), # Corrigido para bater com cli.py
-                    "verdict": "INFO"
-                }
-            return {"provider": self.name, "status": "error", "error": "Indicator not found"}
-        except Exception as e:
-            return {"provider": self.name, "status": "error", "error": str(e)}
+    def _headers(self):
+        return {"X-OTX-API-KEY": self.api_key}
+
+    def _query(self, ioc, ioc_type):
+        if ioc_type == "ipv4":
+            endpoint = f"{self.BASE_URL}/IPv4/{ioc}/general"
+        elif ioc_type == "ipv6":
+            endpoint = f"{self.BASE_URL}/IPv6/{ioc}/general"
+        elif ioc_type == "url":
+            if "://" in ioc:
+                encoded = quote(ioc, safe="")
+                endpoint = f"{self.BASE_URL}/url/{encoded}/general"
+            else:
+                endpoint = f"{self.BASE_URL}/domain/{ioc}/general"
+        else:  # md5 / sha1 / sha256
+            endpoint = f"{self.BASE_URL}/file/{ioc}/general"
+
+        resp = requests.get(endpoint, headers=self._headers(), timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        pulse_count = data.get("pulse_info", {}).get("count", 0)
+
+        return {
+            "verdict": pulse_count,
+            "pulse_count": pulse_count,
+        }

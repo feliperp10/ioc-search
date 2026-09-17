@@ -39,7 +39,7 @@ Add the tool to your shell configuration (Bash or ZSH):
 nano ~/.bashrc  # or ~/.zshrc
 
 # Add this line at the end
-alias ioc-search='~/ioc-search/.venv/bin/python ~/ioc-search/cli.py
+alias ioc-search='python3 ~/ioc-search/cli.py'
 ```
 
 3. **Reload Config:**

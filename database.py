@@ -1,9 +1,13 @@
+import os
 import sqlite3
 import json
 from datetime import datetime, timedelta
 
+DEFAULT_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ioc_cache.db")
+
+
 class Database:
-    def __init__(self, db_path="/home/felipe/ioc-search/ioc_cache.db"):
+    def __init__(self, db_path=DEFAULT_DB_PATH):
         self.conn = sqlite3.connect(db_path)
         self.create_table()
 
